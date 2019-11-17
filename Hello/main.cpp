@@ -12,7 +12,7 @@ const GLint HEIGHT = 600;
 using window_ptr = std::unique_ptr<GLFWwindow, std::function<void(GLFWwindow*)>>;
 
 template<typename ...Ts>
-window_ptr makeWindow(Ts... args) {
+window_ptr makeWindow_glfw(Ts... args) {
    return window_ptr(glfwCreateWindow(std::forward<Ts>(args)...), glfwDestroyWindow);
 }
 
@@ -50,7 +50,7 @@ int main() {
    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-   auto mainWindow = makeWindow(WIDTH, HEIGHT, "MainWindow", nullptr, nullptr);
+   auto mainWindow = makeWindow_glfw(WIDTH, HEIGHT, "MainWindow", nullptr, nullptr);
 
    glfwMakeContextCurrent(mainWindow.get());
    glewExperimental = GL_TRUE;
