@@ -157,7 +157,7 @@ bool addShader(GLuint program, const char* shaderCode, GLenum shaderType) {
    return true;
 }
 
-bool createShaders(){
+bool compileShaders(){
    shaderId = glCreateProgram();
    if (!shaderId) {
       printf("Error creating shader program");
@@ -268,7 +268,7 @@ int main(int argc, char* argv[]) {
       return ret;
 
    createTriangle();
-   createShaders();
+   compileShaders();
 
    bool shouldQuit = false;
    SDL_Event e;

@@ -6,54 +6,41 @@
 #include <memory>
 #include <functional>
 #include <string>
+#include <cmath>
+#include <optional>
+#include <cstdlib>
+#include <time.h>
 
-const GLint WIDTH = 600;
-const GLint HEIGHT = 600;
+#include "util.h"
+#include "shaders.h"
 
-using window_ptr = std::unique_ptr<GLFWwindow, std::function<void(GLFWwindow*)>>;
-template<typename ...Ts>
-window_ptr makeWindow_glfw(Ts... args) {
-   return window_ptr(glfwCreateWindow(std::forward<Ts>(args)...), glfwDestroyWindow);
-}
+const GLint WIDTH = 800;
+const GLint HEIGHT = 800;
 
-struct [[nodiscard]] ContextGuard{
-   ContextGuard(
-      std::function<int(void)> initContext
-      , std::function<void(void)> terminateContext)
-      : mInitContextFun{ initContext }
-      , mTerminateContextFun{ terminateContext } {
-      mInitStatus = mInitContextFun();
-   }
+GLuint uniformXMove;
+GLuint uniformYMove;
+int directionX = 1;
+int directionY = 1;
+auto offsetX = 0.0f;
+auto offsetY = 0.0f;
+auto offsetMax = 0.5f;
+auto offsetIncrement = 5.0e-3f;
 
-   ~ContextGuard() {
-      mTerminateContextFun();
-   }
+GLuint createTriangle() {
+   GLuint vao = 0;
+   GLuint vbo = 0;
 
-   int getInitStatus() {
-      return mInitStatus;
-   }
-
-private: 
-   int mInitStatus;
-   std::function<int(void)> mInitContextFun;
-   std::function<void(void)> mTerminateContextFun;
-};
-
-
-GLuint VAO, VBO, shaderId;
-
-void createTriangle() {
    GLfloat vertices[] = {
       -1.0, -1.0, 0.0,
        1.0, -1.0, 0.0,
        0.0,  1.0, 0.0
    };
 
-   glGenVertexArrays(1, &VAO);
-   glBindVertexArray(VAO);
+   glGenVertexArrays(1, &vao);
+   glBindVertexArray(vao);
 
-      glGenBuffers(1, &VBO);
-      glBindBuffer(GL_ARRAY_BUFFER, VBO); 
+      glGenBuffers(1, &vbo);
+      glBindBuffer(GL_ARRAY_BUFFER, vbo); 
       glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
       glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
@@ -61,8 +48,9 @@ void createTriangle() {
 
    glBindBuffer(GL_ARRAY_BUFFER, 0);
    glBindVertexArray(0);
-}
 
+   return vao;
+}
 
 GLuint createSquare() {
    GLuint vao, vbo;
@@ -97,31 +85,6 @@ GLuint createSquare() {
    return vao;
 }
 
-//vertex shader
-static const char* vShader =
-R"(
-
-#version 330
-layout (location = 0) in vec3 pos;
-
-void main(){
-    gl_Position = vec4(0.5*pos.x, 0.5*pos.y, 0.5*pos.z, 1.0);	
-}
-
-)";
-
-//fragment shader
-static const char* fShader =
-R"(
-
-#version 330
-out vec4 color;
-
-void main(){
-   color = vec4(1.0, 0.0, 0.0, 0.5);
-}
-
-)";
 
 bool addShader(GLuint program, const char* shaderCode, GLenum shaderType) {
    GLuint shader = glCreateShader(shaderType);
@@ -149,11 +112,11 @@ bool addShader(GLuint program, const char* shaderCode, GLenum shaderType) {
    return true;
 }
 
-bool compileShaders(){
-   shaderId = glCreateProgram();
+std::optional<GLuint> compileShaders(){
+   auto shaderId = glCreateProgram();
    if (!shaderId) {
       printf("Error creating shader program");
-      return false;
+      return {};
    }
 
    auto ret = true;
@@ -180,11 +143,24 @@ bool compileShaders(){
       ret = false;
    }
 
-   return ret;
+   uniformXMove = glGetUniformLocation(shaderId, "xMove");
+   uniformYMove = glGetUniformLocation(shaderId, "yMove");
+
+   if (ret)
+      return shaderId;
+   else {
+      glDeleteShader(shaderId);
+      return {};
+   }
 }
 
 
 int main() {
+   std::srand(time(nullptr));
+   offsetX = float(rand() % 100) / 100 - 0.5;
+   offsetY = float(rand() % 100) / 100 - 0.5;
+
+   //init glew
    ContextGuard glfwContext(glfwInit, glfwTerminate);
    const auto ret = glfwContext.getInitStatus();
    if (ret != GLFW_TRUE)
@@ -195,9 +171,13 @@ int main() {
    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
+   //make glfw window
    auto mainWindow = makeWindow_glfw(WIDTH, HEIGHT, "MainWindow", nullptr, nullptr);
 
+   // create gl context
    glfwMakeContextCurrent(mainWindow.get());
+
+   // intit glew
    glewExperimental = GL_TRUE;
    if (const auto ret = glewInit(); ret != GLEW_OK)
       return ret;
@@ -206,8 +186,14 @@ int main() {
    glfwGetFramebufferSize(mainWindow.get(), &bufferWidth, &bufferHeight);
    glViewport(0, 0, bufferHeight, bufferWidth);
 
-   createTriangle();
-   compileShaders();
+   const auto triangleVao = createTriangle();
+   const auto squareVao = createSquare();   
+
+   GLuint shaderId = 0;
+   if (auto ret = compileShaders(); !ret.has_value())
+      return(-1);
+   else
+      shaderId = ret.value();
 
    for (unsigned long i = 0; !glfwWindowShouldClose(mainWindow.get()); ++i) {
       if(i & 0x80)
@@ -215,10 +201,19 @@ int main() {
       else
          glClearColor(0.0, 0.0, 1.0, 1.0);
 
+      offsetX += directionX * offsetIncrement;
+      if(abs(offsetX) >= offsetMax)
+         directionX *= -1;
+      offsetY += directionY * offsetIncrement;
+      if(abs(offsetY) >= offsetMax)
+         directionY *= -1;
+
       glUseProgram(shaderId);
-         glBindVertexArray(VAO);
+         glUniform1f(uniformXMove, offsetX);
+         glUniform1f(uniformYMove, offsetY);
+         glBindVertexArray(triangleVao);
             glDrawArrays(GL_TRIANGLES, 0, 3);
-         glBindVertexArray(createSquare());
+         glBindVertexArray(squareVao);
             glDrawArrays(GL_LINES, 0, 8);
          glBindVertexArray(0);
 
